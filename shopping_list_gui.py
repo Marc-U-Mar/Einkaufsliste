@@ -5,58 +5,22 @@ from datetime import datetime
 from product import Product
 from inventory import Inventory
 from shopping_list_generator import ShoppingListGenerator
+from shopping_list_manager import ShoppingListManager
 
 
 class ShoppingListGUI:
     def __init__(self, master):
         self.master = master
         self.master.title("Einkaufslisten-Generator")
+        self.manager = ShoppingListManager()
         self.inventory = Inventory()
         self.shopping_list_generator = ShoppingListGenerator()
 
-        self.create_database()
-        self.check_and_update_database()
         self.create_widgets()
         self.update_shopping_list_on_startup()
         self.display_purchased_items()
         self.display_shopping_list()
 
-    def create_database(self):
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS shopping_list (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                product_name TEXT NOT NULL,
-                typical_duration INTEGER NOT NULL,
-                last_purchase_date TEXT NOT NULL,
-                price REAL NOT NULL
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS current_shopping_list (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                product_name TEXT NOT NULL,
-                typical_duration INTEGER NOT NULL,
-                price REAL NOT NULL
-            )
-        ''')
-        conn.commit()
-        conn.close()
-
-    def check_and_update_database(self):
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
-
-        cursor.execute("PRAGMA table_info(current_shopping_list)")
-        columns = [column[1] for column in cursor.fetchall()]
-
-        if 'typical_duration' not in columns:
-            cursor.execute("ALTER TABLE current_shopping_list ADD COLUMN typical_duration INTEGER")
-            conn.commit()
-            print("Spalte 'typical_duration' wurde zur Tabelle 'current_shopping_list' hinzugefügt.")
-
-        conn.close()
 
     def create_widgets(self):
         ttk.Label(self.master, text="Produktname:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
@@ -105,55 +69,35 @@ class ShoppingListGUI:
         purchased_items_scrollbar = ttk.Scrollbar(purchased_items_frame, orient="vertical", command=self.purchased_listbox.yview)
         purchased_items_scrollbar.pack(side="right", fill="y")
         self.purchased_listbox.config(yscrollcommand=purchased_items_scrollbar.set)
+        self.purchased_listbox.bind('<Double-1>', self.add_to_shopping_list)
 
         self.status_label = ttk.Label(self.master, text="")
         self.status_label.grid(row=11, column=0, columnspan=2, pady=5)
 
     def update_shopping_list_on_startup(self):
-        current_date = datetime.now()
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT product_name, typical_duration, last_purchase_date FROM shopping_list')
-        items = cursor.fetchall()
-
-        for item in items:
-            product_name, typical_duration, last_purchase_date = item
-            last_purchase_date_obj = datetime.strptime(last_purchase_date, '%Y-%m-%d')
-            days_since_purchase = (current_date - last_purchase_date_obj).days
-            if days_since_purchase >= typical_duration:
-                cursor.execute('SELECT * FROM current_shopping_list WHERE product_name = ?', (product_name,))
-                if cursor.fetchone() is None:
-                    cursor.execute('''
-                        INSERT INTO current_shopping_list (product_name, typical_duration)
-                        VALUES (?, ?)
-                    ''', (product_name, typical_duration))
-
-        conn.commit()
-        conn.close()
+        self.manager.update_shopping_list_on_startup()
+        self.display_shopping_list()
 
     def add_product(self):
         name = self.product_name.get()
-        duration = int(self.typical_duration.get())
-        price = float(self.price.get())
+        duration = self.typical_duration.get()
+        price = self.price.get()
 
-        if not price:
-            self.show_status("Bitte geben Sie einen Preis ein.")
+        if not name or not duration or not price:
+            self.show_status("Bitte füllen Sie alle Felder aus.")
             return
 
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
+        try:
+            duration = int(duration)
+            price = float(price)
+        except ValueError:
+            self.show_status("Ungültige Eingabe für Verbrauchsdauer oder Preis.")
+            return
 
-        cursor.execute('SELECT * FROM current_shopping_list WHERE product_name = ?', (name,))
-        if cursor.fetchone() is None:
-            cursor.execute('INSERT INTO current_shopping_list (product_name, typical_duration, price) VALUES (?, ?, ?)',
-                           (name, duration, price))
-            conn.commit()
+        if self.manager.add_product(name, duration, price):
             self.show_status(f"'{name}' wurde zur Einkaufsliste hinzugefügt.")
         else:
             self.show_status(f"'{name}' ist bereits auf der Einkaufsliste.")
-
-        conn.close()
 
         self.product_name.delete(0, tk.END)
         self.typical_duration.delete(0, tk.END)
@@ -163,33 +107,23 @@ class ShoppingListGUI:
 
     def display_shopping_list(self):
         self.shopping_list.delete(0, tk.END)
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT product_name, typical_duration, price FROM current_shopping_list')
-        items = cursor.fetchall()
-        conn.close()
+        items = self.manager.get_shopping_list()
 
-        total_budget = 0
+        total_budget = self.manager.calculate_total_budget(items)
         for item in items:
             self.shopping_list.insert(tk.END, f"{item[0]} (Verbrauchsdauer: {item[1]} Tage, {item[2]:.2f} €)")
-            total_budget += item[2]
 
         self.shopping_list.insert(tk.END, f"Gesamtkosten: {total_budget:.2f} €")
 
     def display_purchased_items(self):
-        items = self.get_purchased_items()
+        items = self.manager.get_purchased_items()
 
         self.purchased_listbox.delete(0, tk.END)
         for item in items:
-            self.purchased_listbox.insert(tk.END, f"{item[0]} (Letzter Kauf: {item[2]}, Preis: {item[3]:.2f} €)")
+            display_text = self.manager.format_purchased_item(item)
+            self.purchased_listbox.insert(tk.END, display_text)
 
-    def get_purchased_items(self):
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT product_name, typical_duration, last_purchase_date FROM shopping_list')
-        items = cursor.fetchall()
-        conn.close()
-        return items
+        self.show_status("Liste der gekauften Artikel wurde aktualisiert.")
 
     def delete_selected_product(self):
         selected_shopping = self.shopping_list.curselection()
@@ -198,11 +132,13 @@ class ShoppingListGUI:
         if selected_shopping:
             product_text = self.shopping_list.get(selected_shopping)
             product_name = product_text.split(" (")[0]
-            self.delete_from_current_shopping_list(product_name)
+            self.manager.delete_from_current_shopping_list(product_name)
+            self.show_status(f"Das Produkt '{product_name}' wurde von der Einkaufsliste entfernt.")
         elif selected_purchased:
             product_text = self.purchased_listbox.get(selected_purchased)
             product_name = product_text.split(" (")[0]
-            self.delete_from_purchased_list(product_name)
+            self.manager.delete_from_purchased_list(product_name)
+            self.show_status(f"Das Produkt '{product_name}' wurde aus der Liste 'Bisher gekaufte Artikel' entfernt.")
         else:
             self.show_status("Bitte wählen Sie ein Produkt aus, das gelöscht werden soll.")
             return
@@ -234,25 +170,14 @@ class ShoppingListGUI:
         product_text = self.purchased_listbox.get(selected)
         product_name = product_text.split(" (")[0]
 
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT typical_duration FROM shopping_list WHERE product_name = ?', (product_name,))
-        result = cursor.fetchone()
-        if result:
-            typical_duration = result[0]
-            cursor.execute('SELECT * FROM current_shopping_list WHERE product_name = ?', (product_name,))
-            if cursor.fetchone() is None:
-                cursor.execute('INSERT INTO current_shopping_list (product_name, typical_duration) VALUES (?, ?)',
-                               (product_name, typical_duration))
-                conn.commit()
-                self.show_status(f"'{product_name}' wurde zur Einkaufsliste hinzugefügt.")
-            else:
-                self.show_status(f"'{product_name}' ist bereits auf der Einkaufsliste.")
+        result = self.manager.add_to_shopping_list(product_name)
+        if result is True:
+            self.show_status(f"'{product_name}' wurde zur Einkaufsliste hinzugefügt.")
+        elif result is False:
+            self.show_status(f"'{product_name}' ist bereits auf der Einkaufsliste.")
         else:
             self.show_status(f"Fehler: Keine Verbrauchsdauer für '{product_name}' gefunden.")
 
-        conn.close()
         self.display_shopping_list()
 
     def show_status(self, message):
@@ -263,44 +188,13 @@ class ShoppingListGUI:
         purchase_date = simpledialog.askstring("Einkaufsdatum", "Bitte geben Sie das Einkaufsdatum ein (YYYY-MM-DD):")
         return purchase_date
 
-    def check_and_update_item(self, product_name, typical_duration, purchase_date):
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT * FROM shopping_list WHERE product_name = ?', (product_name,))
-        existing_item = cursor.fetchone()
-
-        if existing_item:
-            cursor.execute('UPDATE shopping_list SET last_purchase_date = ? WHERE product_name = ?',
-                           (purchase_date, product_name))
-        else:
-            cursor.execute(
-                'INSERT INTO shopping_list (product_name, typical_duration, last_purchase_date) VALUES (?, ?, ?)',
-                (product_name, typical_duration, purchase_date))
-
-        conn.commit()
-        conn.close()
-
     def export_shopping_list(self):
         purchase_date = self.get_purchase_date()
         if not purchase_date:
             self.show_status("Export abgebrochen.")
             return
 
-        conn = sqlite3.connect('shopping_list.db')
-        cursor = conn.cursor()
-
-        cursor.execute('SELECT product_name, typical_duration FROM current_shopping_list')
-        items = cursor.fetchall()
-
-        for item in items:
-            product_name, typical_duration = item
-            self.check_and_update_item(product_name, typical_duration, purchase_date)
-
-        cursor.execute('DELETE FROM current_shopping_list')
-
-        conn.commit()
-        conn.close()
+        items = self.manager.export_shopping_list(purchase_date)
 
         self.display_shopping_list()
         self.display_purchased_items()
@@ -316,5 +210,6 @@ class ShoppingListGUI:
             with open(file_path, "w", encoding="utf-8") as file:
                 file.write(f"Einkaufsdatum: {purchase_date}\n\n")
                 for item in items:
-                    file.write(f"{item[0]} (Verbrauchsdauer: {item[1]} Tage)\n")
+                    file.write(f"{item[0]} (Verbrauchsdauer: {item[1]} Tage, Preis: {item[2]:.2f} €)\n")
+                file.write(f"\nGesamtkosten: {sum(item[2] for item in items):.2f} €")
             self.show_status(f"Einkaufsliste wurde exportiert und Artikel wurden aktualisiert.")
