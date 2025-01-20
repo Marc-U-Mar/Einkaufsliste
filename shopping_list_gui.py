@@ -5,10 +5,9 @@ from datetime import datetime
 
 
 class ShoppingListGUI:
-    def __init__(self, master, manager, generator):
+    def __init__(self, master, manager):
         self.master = master
         self.manager = manager
-        self.shopping_list_generator = generator
         self.product_name = None
         self.typical_duration = None
         self.price = None
