@@ -1,17 +1,17 @@
 import sqlite3
+from calendar import day_name
 from datetime import datetime
-
+from database_manager import DatabaseManager
 
 class ShoppingListManager:
     def __init__(self, db_name='shopping_list.db'):
         self.db_name = db_name
+        self.db_manager = DatabaseManager(db_name)
         self.create_database()
         self.check_and_update_database()
 
     def create_database(self):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        cursor.execute('''
+        self.db_manager.execute_query('''
             CREATE TABLE IF NOT EXISTS shopping_list (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 product_name TEXT NOT NULL,
@@ -20,7 +20,7 @@ class ShoppingListManager:
                 price REAL NOT NULL
             )
         ''')
-        cursor.execute('''
+        self.db_manager.execute_query('''
             CREATE TABLE IF NOT EXISTS current_shopping_list (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 product_name TEXT NOT NULL,
@@ -28,8 +28,27 @@ class ShoppingListManager:
                 price REAL NOT NULL
             )
         ''')
-        conn.commit()
-        conn.close()
+
+    def check_and_update_database(self):
+        columns = self.db_manager.execute_query("PRAGMA table_info(current_shopping_list)")
+        if 'typical_duration' not in [column[1] for column in columns]:
+            self.db_manager.execute_query("ALTER TABLE current_shopping_list ADD COLUMN typical_duration INTEGER")
+
+    def add_product(self, name, duration, price):
+        result = self.db_manager.execute_query('SELECT * FROM current_shopping_list WHERE product_name = ?', (name,))
+        if not result:
+            self.db_manager.execute_query(
+                'INSERT INTO current_shopping_list (product_name, typical_duration, price) VALUES (?, ?, ?)',
+                (name, duration, price))
+            return True
+        return False
+
+    def get_shopping_list(self):
+        return self.db_manager.execute_query('SELECT product_name, typical_duration, price FROM current_shopping_list')
+
+    def get_purchased_items(self):
+        return self.db_manager.execute_query(
+            'SELECT product_name, typical_duration, last_purchase_date, price FROM shopping_list')
 
     def validate_date(self, date_string):
         try:
@@ -118,48 +137,8 @@ class ShoppingListManager:
         else:
             return False, f"'{name}' ist bereits auf der Einkaufsliste."
 
-    def check_and_update_database(self):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(current_shopping_list)")
-        columns = [column[1] for column in cursor.fetchall()]
-        if 'typical_duration' not in columns:
-            cursor.execute("ALTER TABLE current_shopping_list ADD COLUMN typical_duration INTEGER")
-            conn.commit()
-        conn.close()
-
-    def add_product(self, name, duration, price):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM current_shopping_list WHERE product_name = ?', (name,))
-        if cursor.fetchone() is None:
-            cursor.execute('INSERT INTO current_shopping_list (product_name, typical_duration, price) VALUES (?, ?, ?)',
-                           (name, duration, price))
-            conn.commit()
-            conn.close()
-            return True
-        else:
-            conn.close()
-            return False
-
-    def get_shopping_list(self):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        cursor.execute('SELECT product_name, typical_duration, price FROM current_shopping_list')
-        items = cursor.fetchall()
-        conn.close()
-        return items
-
     def calculate_total_budget(self, items):
         return sum(item[2] for item in items)
-
-    def get_purchased_items(self):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        cursor.execute('SELECT product_name, typical_duration, last_purchase_date, price FROM shopping_list')
-        items = cursor.fetchall()
-        conn.close()
-        return items
 
     def format_purchased_item(self, item):
         product_name = item[0] if len(item) > 0 else "Unbekannt"

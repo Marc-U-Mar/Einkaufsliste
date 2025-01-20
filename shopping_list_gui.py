@@ -9,12 +9,13 @@ from shopping_list_manager import ShoppingListManager
 
 
 class ShoppingListGUI:
-    def __init__(self, master):
+    def __init__(self, master, manager, inventory, generator):
         self.master = master
+        self.manager = manager
+        self.inventory = inventory
+        self.shopping_list_generator = generator
+        # Rest des Konstruktors
         self.master.title("Einkaufslisten-Generator")
-        self.manager = ShoppingListManager()
-        self.inventory = Inventory()
-        self.shopping_list_generator = ShoppingListGenerator()
 
         self.create_widgets()
         self.update_shopping_list_on_startup()
