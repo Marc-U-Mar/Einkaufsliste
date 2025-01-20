@@ -2,10 +2,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog
 import sqlite3
 from datetime import datetime
-from product import Product
-from inventory import Inventory
-from shopping_list_generator import ShoppingListGenerator
-from shopping_list_manager import ShoppingListManager
 
 
 class ShoppingListGUI:
@@ -14,13 +10,31 @@ class ShoppingListGUI:
         self.manager = manager
         self.inventory = inventory
         self.shopping_list_generator = generator
-        # Rest des Konstruktors
-        self.master.title("Einkaufslisten-Generator")
+        self.product_name = None
+        self.typical_duration = None
+        self.price = None
+        self.shopping_list = None
+        self.purchased_listbox = None
+        self.status_label = None
 
+        self.master.title("Einkaufslisten-Generator")
         self.create_widgets()
         self.update_shopping_list_on_startup()
         self.display_purchased_items()
         self.display_shopping_list()
+
+    def get_purchase_date(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        date_string = simpledialog.askstring("Einkaufsdatum",
+                                             "Bitte geben Sie das Einkaufsdatum ein (YYYY-MM-DD):",
+                                             initialvalue=today)
+        if date_string:
+            if self.manager.validate_date(date_string):
+                return date_string
+            else:
+                self.show_status("Ungültiges Datumsformat. Bitte verwenden Sie YYYY-MM-DD.")
+                return None
+        return None
 
     def create_widgets(self):
         self.create_input_fields()
@@ -84,6 +98,58 @@ class ShoppingListGUI:
         self.status_label = ttk.Label(self.master, text="")
         self.status_label.grid(row=11, column=0, columnspan=2, pady=5)
 
+    def add_product(self):
+        name = self.product_name.get()
+        duration = self.typical_duration.get()
+        price = self.price.get()
+
+        success, message = self.manager.validate_and_add_product(name, duration, price)
+        self.show_status(message)
+
+        if success:
+            self.product_name.delete(0, tk.END)
+            self.typical_duration.delete(0, tk.END)
+            self.price.delete(0, tk.END)
+            self.display_shopping_list()
+
+    def add_to_shopping_list(self):
+        selected = self.purchased_listbox.curselection()
+        if not selected:
+            return
+
+        product_text = self.purchased_listbox.get(selected)
+        product_name = product_text.split(" (")[0]
+
+        result = self.manager.add_to_shopping_list(product_name)
+        if result is True:
+            self.show_status(f"'{product_name}' wurde zur Einkaufsliste hinzugefügt.")
+        elif result is False:
+            self.show_status(f"'{product_name}' ist bereits auf der Einkaufsliste.")
+        else:
+            self.show_status(f"Fehler: Keine Verbrauchsdauer für '{product_name}' gefunden.")
+
+    def show_status(self, message):
+        self.status_label.config(text=message)
+        self.master.after(3000, lambda: self.status_label.config(text=""))
+
+    def update_shopping_list_on_startup(self):
+        self.manager.update_shopping_list_on_startup()
+        self.display_shopping_list()
+
+    def display_purchased_items(self):
+        self.purchased_listbox.delete(0, tk.END)
+        formatted_items = self.manager.get_formatted_purchased_items()
+        for item in formatted_items:
+            self.purchased_listbox.insert(tk.END, item)
+
+        self.show_status("Liste der gekauften Artikel wurde aktualisiert.")
+
+    def display_shopping_list(self):
+        self.shopping_list.delete(0, tk.END)
+        formatted_items = self.manager.get_formatted_shopping_list()
+        for item in formatted_items:
+            self.shopping_list.insert(tk.END, item)
+
     def export_shopping_list(self):
         purchase_date = self.get_purchase_date()
         if not purchase_date:
@@ -107,20 +173,6 @@ class ShoppingListGUI:
                 file.write(export_content)
             self.show_status(f"Einkaufsliste wurde exportiert und Artikel wurden aktualisiert.")
 
-    def display_purchased_items(self):
-        self.purchased_listbox.delete(0, tk.END)
-        formatted_items = self.manager.get_formatted_purchased_items()
-        for item in formatted_items:
-            self.purchased_listbox.insert(tk.END, item)
-
-        self.show_status("Liste der gekauften Artikel wurde aktualisiert.")
-
-    def display_shopping_list(self):
-        self.shopping_list.delete(0, tk.END)
-        formatted_items = self.manager.get_formatted_shopping_list()
-        for item in formatted_items:
-            self.shopping_list.insert(tk.END, item)
-
     def delete_selected_product(self):
         selected_shopping = self.shopping_list.curselection()
         selected_purchased = self.purchased_listbox.curselection()
@@ -141,24 +193,6 @@ class ShoppingListGUI:
         self.display_shopping_list()
         self.display_purchased_items()
 
-    def update_shopping_list_on_startup(self):
-        self.manager.update_shopping_list_on_startup()
-        self.display_shopping_list()
-
-    def add_product(self):
-        name = self.product_name.get()
-        duration = self.typical_duration.get()
-        price = self.price.get()
-
-        success, message = self.manager.validate_and_add_product(name, duration, price)
-        self.show_status(message)
-
-        if success:
-            self.product_name.delete(0, tk.END)
-            self.typical_duration.delete(0, tk.END)
-            self.price.delete(0, tk.END)
-            self.display_shopping_list()
-
     def delete_from_current_shopping_list(self, product_name):
         conn = sqlite3.connect('shopping_list.db')
         cursor = conn.cursor()
@@ -175,37 +209,6 @@ class ShoppingListGUI:
         conn.close()
         self.show_status(f"Das Produkt '{product_name}' wurde aus der Liste 'Bisher gekaufte Artikel' entfernt.")
 
-    def add_to_shopping_list(self, event):
-        selected = self.purchased_listbox.curselection()
-        if not selected:
-            return
 
-        product_text = self.purchased_listbox.get(selected)
-        product_name = product_text.split(" (")[0]
-
-        result = self.manager.add_to_shopping_list(product_name)
-        if result is True:
-            self.show_status(f"'{product_name}' wurde zur Einkaufsliste hinzugefügt.")
-        elif result is False:
-            self.show_status(f"'{product_name}' ist bereits auf der Einkaufsliste.")
-        else:
-            self.show_status(f"Fehler: Keine Verbrauchsdauer für '{product_name}' gefunden.")
 
         self.display_shopping_list()
-
-    def show_status(self, message):
-        self.status_label.config(text=message)
-        self.master.after(3000, lambda: self.status_label.config(text=""))
-
-    def get_purchase_date(self):
-        today = datetime.now().strftime("%Y-%m-%d")
-        date_string = simpledialog.askstring("Einkaufsdatum",
-                                             "Bitte geben Sie das Einkaufsdatum ein (YYYY-MM-DD):",
-                                             initialvalue=today)
-        if date_string:
-            if self.manager.validate_date(date_string):
-                return date_string
-            else:
-                self.show_status("Ungültiges Datumsformat. Bitte verwenden Sie YYYY-MM-DD.")
-                return None
-        return None
