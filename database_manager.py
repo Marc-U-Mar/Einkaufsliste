@@ -15,3 +15,21 @@ class DatabaseManager:
         result = cursor.fetchall()
         conn.close()
         return result
+
+    def create_database(self):
+        self.execute_query('''
+            CREATE TABLE IF NOT EXISTS shopping_list (
+                product_name TEXT PRIMARY KEY,
+                typical_duration INTEGER,
+                last_purchase_date TEXT,
+                price REAL
+            )
+        ''')
+        self.execute_query('''
+            CREATE TABLE IF NOT EXISTS current_shopping_list (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_name TEXT NOT NULL,
+                typical_duration INTEGER NOT NULL,
+                price REAL NOT NULL
+            )
+        ''')
