@@ -15,23 +15,19 @@ class ShoppingListApp:
         self.root = tk.Tk()
         self.root.title("Einkaufslisten-Generator")
 
-        # Initialisierung des Datenbankmanagers
         self.db_manager = DatabaseManager('shopping_list.db')
         self.db_manager.create_database()
 
-        # Modelle erstellen
         self.shopping_list_model = ShoppingListModel(self.db_manager)
         self.purchased_list_model = PurchasedListModel(self.db_manager)
 
-        # Entfernen älterer Duplikate beim Start der App
+# Verhindert Inkonsistenzen in der Datenbank, stellt sicher, dass nur aktuellsten Einträge vorhanden sind
         self.purchased_list_model.remove_older_duplicates()
 
-        # Views erstellen
         shopping_list_view = ShoppingListView(self.root)
         purchased_list_view = PurchasedListView(self.root)
         input_view = InputView(self.root)
 
-        # Controller erstellen und verbinden
         self.shopping_list_controller = ShoppingListController(self.shopping_list_model, shopping_list_view)
         self.purchased_list_controller = PurchasedListController(
             self.purchased_list_model,
@@ -40,13 +36,11 @@ class ShoppingListApp:
         )
         self.input_controller = InputController(input_view, self.shopping_list_controller)
 
-        # Setzen des PurchasedListControllers für den ShoppingListController
         self.shopping_list_controller.set_purchased_list_controller(self.purchased_list_controller)
 
-        # Automatische Überprüfung und Aktualisierung bei jedem Appstart
+# Automatisiert die Wiederaufnahme von Produkten in die Einkaufsliste, wenn Verbrauchsdauer überschritten ist
         self.shopping_list_model.reset_expired_items()
 
-        # GUI-Manager einrichten
         self.gui_manager = GUIManager(self.root, self.shopping_list_controller,
                                       self.purchased_list_controller, self.input_controller)
         self.gui_manager.setup_gui()

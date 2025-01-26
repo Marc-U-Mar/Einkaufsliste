@@ -16,6 +16,7 @@ class ShoppingListController:
             return date_string
         return None
 
+# Ermöglicht die Kommunikation zwischen den Controllern für das Hinzufügen von Artikeln auf die Einkaufliste
     def set_purchased_list_controller(self, purchased_list_controller):
         self.purchased_list_controller = purchased_list_controller
 

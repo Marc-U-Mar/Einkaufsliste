@@ -21,6 +21,7 @@ class ShoppingListModel:
 
     def add_product(self, name, duration, price):
         result = self.db_manager.execute_query('SELECT * FROM current_shopping_list WHERE product_name = ?', (name,))
+# Verhindert Duplikate in der Einkaufsliste
         if not result:
             self.db_manager.execute_query(
                 'INSERT INTO current_shopping_list (product_name, typical_duration, price) VALUES (?, ?, ?)',
@@ -109,6 +110,7 @@ class ShoppingListModel:
             last_purchase = datetime.strptime(last_purchase_date, "%Y-%m-%d").date()
             days_since_purchase = (today - last_purchase).days
 
+# Automatisiert die Erstellunge der Einkaufliste basierend auf typischen Verbrauchsdauer der Produkte
             if days_since_purchase > typical_duration:
                 existing = self.db_manager.execute_query(
                     'SELECT * FROM current_shopping_list WHERE product_name = ?', (product_name,))
